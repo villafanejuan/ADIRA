@@ -1,21 +1,20 @@
 <?php
-// LÓGICA PHP (NO MODIFICADA, SEGÚN REQUERIMIENTO DEL USUARIO)
 require_once __DIR__ . '/../../../config/bd.php';
 require_once __DIR__ . '/../../../app/model/Evento.php';
 
 use App\DatabaseConnection;
 use App\Models\Evento;
 
-// NOTA: Asumo que DatabaseConnection y Evento están correctamente definidos.
-// Obtener la conexión PDO
-// NOTA: Si DatabaseConnection no existe, esta línea causará un error fatal.
-// Se mantiene tal cual fue provista por el usuario.
 $pdo = DatabaseConnection::getConnection(); 
-
-// Instanciar el modelo con la conexión
 $model = new Evento($pdo);
 
-// Procesar POST
+// 📦 Cargar empleados y categorías desde la BD
+$empleadosStmt = $pdo->query("SELECT ID_Empleado, CONCAT(Nombre, ' ', Apellido) AS NombreCompleto FROM empleados ORDER BY Nombre");
+$empleadosList = $empleadosStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$categoriasStmt = $pdo->query("SELECT ID_Categoria, NombreCategoria FROM categorias_gasto ORDER BY NombreCategoria");
+$categoriasList = $categoriasStmt->fetchAll(PDO::FETCH_ASSOC);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $eventoData = [
         'Localidad' => $_POST['Localidad'] ?? '',
@@ -47,10 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crear Evento | ADIRA</title>
-    <!-- Se mantiene el enlace a styles.css si existe -->
     <link rel="stylesheet" href="../../../public/css/styles.css"> 
     <link rel="stylesheet" href="../../../public/css/create.css">
 
+    <!-- Select2 -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 </head>
 <body>
     <div class="container">
@@ -101,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
+            <!-- EMPLEADOS -->
             <div class="section">
                 <h2>Empleados Asignados</h2>
                 <button type="button" class="btn-base btn-add" onclick="addEmpleado()">Agregar Empleado</button>
@@ -108,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <table id="empleados-table">
                         <thead>
                             <tr>
-                                <th>ID Empleado</th>
+                                <th>Empleado</th>
                                 <th>Rol</th>
                                 <th>Horas</th>
                                 <th>Observaciones</th>
@@ -120,6 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
+            <!-- GASTOS -->
             <div class="section">
                 <h2>Gastos</h2>
                 <button type="button" class="btn-base btn-add" onclick="addGasto()">Agregar Gasto</button>
@@ -145,28 +147,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
     </div>
 
+    <!-- JS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
     <script>
+        const empleadosData = <?= json_encode($empleadosList) ?>;
+        const categoriasData = <?= json_encode($categoriasList) ?>;
+
         function addEmpleado() {
             const tbody = document.querySelector('#empleados-table tbody');
             const index = tbody.children.length;
             const row = document.createElement('tr');
+
+            const options = empleadosData.map(emp => 
+                `<option value="${emp.ID_Empleado}">${emp.NombreCompleto}</option>`
+            ).join('');
+
             row.innerHTML = `
-                <td><input type="number" name="empleados[${index}][ID_Empleado]" required></td>
+                <td>
+                    <select class="select2" name="empleados[${index}][ID_Empleado]" required>
+                        <option value="">Seleccione empleado</option>
+                        ${options}
+                    </select>
+                </td>
                 <td><input type="text" name="empleados[${index}][RolEnEvento]"></td>
                 <td><input type="number" step="0.1" name="empleados[${index}][HorasAsignadas]"></td>
                 <td><input type="text" name="empleados[${index}][Observaciones]"></td>
                 <td><button type="button" class="btn-base btn-remove in-table" onclick="this.closest('tr').remove()">Eliminar</button></td>
             `;
             tbody.appendChild(row);
+            $(row).find('.select2').select2();
         }
 
         function addGasto() {
             const tbody = document.querySelector('#gastos-table tbody');
             const index = tbody.children.length;
             const row = document.createElement('tr');
+
+            const options = categoriasData.map(cat => 
+                `<option value="${cat.ID_Categoria}">${cat.NombreCategoria}</option>`
+            ).join('');
+
             row.innerHTML = `
                 <td><input type="text" name="gastos[${index}][Descripcion]"></td>
-                <td><input type="number" name="gastos[${index}][ID_Categoria]"></td>
+                <td>
+                    <select class="select2" name="gastos[${index}][ID_Categoria]" required>
+                        <option value="">Seleccione categoría</option>
+                        ${options}
+                    </select>
+                </td>
                 <td><input type="number" step="0.01" name="gastos[${index}][Cantidad]" value="1"></td>
                 <td><input type="number" step="0.01" name="gastos[${index}][PrecioUnitario]" value="0"></td>
                 <td><input type="number" step="0.01" name="gastos[${index}][Monto]" value="0"></td>
@@ -174,7 +204,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <td><button type="button" class="btn-base btn-remove in-table" onclick="this.closest('tr').remove()">Eliminar</button></td>
             `;
             tbody.appendChild(row);
+            $(row).find('.select2').select2();
         }
+
+        // Inicializar select2 globalmente
+        $(document).ready(function() {
+            $('.select2').select2();
+        });
     </script>
 </body>
 </html>
