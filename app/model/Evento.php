@@ -155,24 +155,129 @@ class Evento
 
 
 
-    // Actualizar un evento existente
-    public function actualizar(int $id, array $data): bool
+        // 🔍 Obtener evento completo con empleados y gastos
+    public function obtenerEventoPorId(int $id): ?array
     {
-        $data['ID_Evento'] = $id;
-        $sql = "UPDATE Eventos SET 
-                    Localidad = :Localidad,
-                    Contratista = :Contratista,
-                    NombreEvento = :NombreEvento,
-                    Modalidad = :Modalidad,
-                    Establecimiento = :Establecimiento,
-                    FechaInicio = :FechaInicio,
-                    FechaFin = :FechaFin,
-                    MontoCobrarEstimado = :MontoCobrarEstimado,
-                    Moneda = :Moneda
-                WHERE ID_Evento = :ID_Evento";
-        $stmt = $this->db->prepare($sql);
-        return $stmt->execute($data);
+        try {
+            // 1️⃣ Datos principales del evento
+            $stmt = $this->db->prepare("SELECT * FROM eventos WHERE ID_Evento = :id");
+            $stmt->execute(['id' => $id]);
+            $evento = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$evento) return null;
+
+            // 2️⃣ Empleados asociados
+            $stmtEmp = $this->db->prepare("
+                SELECT ee.*, e.Nombre, e.Apellido 
+                FROM empleados_eventos ee
+                JOIN empleados e ON ee.ID_Empleado = e.ID_Empleado
+                WHERE ee.ID_Evento = :id
+            ");
+            $stmtEmp->execute(['id' => $id]);
+            $evento['Empleados'] = $stmtEmp->fetchAll(PDO::FETCH_ASSOC);
+
+            // 3️⃣ Gastos asociados
+            $stmtGasto = $this->db->prepare("
+                SELECT g.*, c.NombreCategoria 
+                FROM gastos g
+                LEFT JOIN categorias_gasto c ON g.ID_Categoria = c.ID_Categoria
+                WHERE g.ID_Evento = :id
+            ");
+            $stmtGasto->execute(['id' => $id]);
+            $evento['Gastos'] = $stmtGasto->fetchAll(PDO::FETCH_ASSOC);
+
+            return $evento;
+        } catch (\Exception $e) {
+            error_log("❌ Error al obtener evento completo: " . $e->getMessage());
+            return null;
+        }
     }
+
+
+
+    // ✏️ Actualizar evento completo con empleados y gastos
+    public function actualizarEventoCompleto(int $id, array $eventoData, array $empleados = [], array $gastos = []): bool
+    {
+        try {
+            $this->db->beginTransaction();
+
+            // 1️⃣ Actualizar datos principales del evento
+            $eventoData['ID_Evento'] = $id;
+            $sql = "UPDATE eventos SET 
+                        Localidad = :Localidad,
+                        Contratista = :Contratista,
+                        NombreEvento = :NombreEvento,
+                        Modalidad = :Modalidad,
+                        Establecimiento = :Establecimiento,
+                        FechaInicio = :FechaInicio,
+                        FechaFin = :FechaFin,
+                        MontoCobrarEstimado = :MontoCobrarEstimado,
+                        Moneda = :Moneda
+                    WHERE ID_Evento = :ID_Evento";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($eventoData);
+
+            // 2️⃣ Eliminar empleados y gastos anteriores
+            $this->db->prepare("DELETE FROM empleados_eventos WHERE ID_Evento = ?")->execute([$id]);
+            $this->db->prepare("DELETE FROM gastos WHERE ID_Evento = ?")->execute([$id]);
+
+            // 3️⃣ Insertar empleados actualizados
+            if (!empty($empleados)) {
+                $sqlEmp = "INSERT INTO empleados_eventos 
+                (ID_Empleado, ID_Evento, RolEnEvento, FechaAsignacion, HorasAsignadas, Observaciones)
+                VALUES (:ID_Empleado, :ID_Evento, :RolEnEvento, :FechaAsignacion, :HorasAsignadas, :Observaciones)";
+                $stmtEmp = $this->db->prepare($sqlEmp);
+
+                foreach ($empleados as $emp) {
+                    if (empty($emp['ID_Empleado'])) continue;
+
+                    $stmtEmp->execute([
+                        'ID_Empleado' => $emp['ID_Empleado'],
+                        'ID_Evento' => $id,
+                        'RolEnEvento' => $emp['RolEnEvento'] ?? '',
+                        'FechaAsignacion' => date('Y-m-d'),
+                        'HorasAsignadas' => $emp['HorasAsignadas'] ?? 0,
+                        'Observaciones' => $emp['Observaciones'] ?? ''
+                    ]);
+                }
+            }
+
+            // 4️⃣ Insertar gastos actualizados
+            if (!empty($gastos)) {
+                $sqlGasto = "INSERT INTO gastos 
+                (IdentificadorUnico, Fecha, Cantidad, PrecioUnitario, Monto, Descripcion, ID_Categoria, ID_Evento, Proveedor, Comprobante)
+                VALUES (:IdentificadorUnico, :Fecha, :Cantidad, :PrecioUnitario, :Monto, :Descripcion, :ID_Categoria, :ID_Evento, :Proveedor, :Comprobante)";
+                $stmtGasto = $this->db->prepare($sqlGasto);
+
+                foreach ($gastos as $g) {
+                    if (empty($g['Descripcion'])) continue;
+
+                    $stmtGasto->execute([
+                        'IdentificadorUnico' => $g['IdentificadorUnico'] ?? uniqid('GASTO_', true),
+                        'Fecha' => $g['Fecha'] ?? date('Y-m-d'),
+                        'Cantidad' => $g['Cantidad'] ?? 1,
+                        'PrecioUnitario' => $g['PrecioUnitario'] ?? 0,
+                        'Monto' => $g['Monto'] ?? 0,
+                        'Descripcion' => $g['Descripcion'],
+                        'ID_Categoria' => $g['ID_Categoria'] ?? null,
+                        'ID_Evento' => $id,
+                        'Proveedor' => $g['Proveedor'] ?? '',
+                        'Comprobante' => $g['Comprobante'] ?? ''
+                    ]);
+                }
+            }
+
+            // 5️⃣ Confirmar transacción
+            $this->db->commit();
+            return true;
+
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            error_log("❌ Error al actualizar evento completo: " . $e->getMessage());
+            return false;
+        }
+    }
+
 
     // Eliminar un evento
     public function eliminar(int $id): bool

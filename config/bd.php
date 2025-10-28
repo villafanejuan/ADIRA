@@ -12,7 +12,7 @@ class DatabaseConnection {
             $host = 'localhost';
             $db   = 'ADIRA';
             $user = 'root';
-            $pass = '';
+            $pass = 'root';
             $charset = 'utf8mb4';
 
             $dsn = "mysql:host=$host;dbname=$db;charset=$charset";

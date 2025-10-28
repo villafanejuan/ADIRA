@@ -95,7 +95,8 @@ $mensajeExito = isset($_GET['success']) && $_GET['success'] === 'evento_eliminad
                     <td><?= number_format($evento['MontoCobrarEstimado'] ?? 0, 2, ',', '.') ?></td>
                     <td><?= htmlspecialchars($evento['Moneda'] ?? 'ARS') ?></td>
                     <td class="actions">
-                        <a href="/adira/eventos/edit/<?= $evento['ID_Evento'] ?>" class="btn-edit">Editar</a>
+                        <a href="/ADIRA/resource/view/eventos/edit.php?id=<?= $evento['ID_Evento'] ?>" class="btn-edit">Editar</a>
+
                         <a href="#" class="btn-delete" 
                            onclick="confirmDelete(<?= $evento['ID_Evento'] ?>, '<?= htmlspecialchars($evento['NombreEvento']) ?>')">
                            Eliminar
